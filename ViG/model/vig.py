@@ -195,7 +195,7 @@ class FFN(nn.Module):
             nn.BatchNorm2d(hidden_channels),
         )
         self.gelu = nn.GELU()
-        self.fc1 = nn.Sequential(
+        self.fc2 = nn.Sequential(
             nn.Conv2d(hidden_channels, in_channels, 1, stride=1, padding=0),
             nn.BatchNorm2d(in_channels),
         )
@@ -204,7 +204,7 @@ class FFN(nn.Module):
     def forward(self, x):
         shortcut = x
         x = self.fc1(x)
-        x = self.act(x)
+        x = self.gelu(x)
         x = self.fc2(x)
         x = self.drop_path(x) + shortcut
 
@@ -245,8 +245,8 @@ class ViG(nn.Module):
                                         nn.Dropout(drop_path),
                                         nn.Conv2d(1024, n_classes, 1, bias=True))
 
-    def forward(self):
-        x = self.stem(x),
+    def forward(self, x):
+        x = self.stem(x)
 
         for i in range(self.n_blocks):
             x = self.vig_blocks[i](x)
