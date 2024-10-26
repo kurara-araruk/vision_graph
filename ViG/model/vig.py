@@ -16,7 +16,7 @@ import torch.nn.init as init
 from einops import repeat
 from einops.layers.torch import Rearrange
 
-from timm.models.layers import DropPath
+from timm.layers import DropPath
 
 ###############################################################################
 
@@ -81,7 +81,7 @@ class Knn(nn.Module):
             _, nn_idx = torch.topk(-dist, k=self.k)    #  距離が近い点 k 個を取得するため、dist をマイナスにする。  ->  [batch_size, n_points, k]
 
             center_idx = torch.arange(0, n_points, device=x.device).repeat(batch_size, self.k, 1).transpose(2, 1)   # ->  [batch_size, n_points, k]
-            edge_index = torch.stack((nn_idx, center_idx), dim=0)   # ->  [2, batch_size, n_points*2, k]
+            edge_index = torch.stack((nn_idx, center_idx), dim=0)   # ->  [2, batch_size, n_points, k]
 
         return edge_index
 
@@ -92,18 +92,56 @@ class Knn(nn.Module):
 # graph -> graph'
 
 def batched_index_select(x, idx):
-    """
-    
-    """
     batch_size, num_dims, num_vertices_reduced = x.shape[:3]
     _, num_vertices, k = idx.shape
-    idx_base = torch.arange(0, batch_size, device=idx.device).view(-1, 1, 1) * num_vertices_reduced
-    idx = idx + idx_base
-    idx = idx.contiguous().view(-1)
+    """
+    idx.shape = [batch_size, num_points, k]
+    idx = edge_idx[1]、で idx.shape = [2, 5, 3]の場合
+    idx = tensor([[[0, 0, 0],
+                   [1, 1, 1],
+                   [2, 2, 2],
+                   [3, 3, 3],
+                   [4, 4, 4]],
 
-    x = x.transpose(2, 1)
-    feature = x.contiguous().view(batch_size * num_vertices_reduced, -1)[idx, :]
-    feature = feature.view(batch_size, num_vertices, k, num_dims).permute(0, 3, 1, 2).contiguous()
+                  [[0, 0, 0],
+                   [1, 1, 1],
+                   [2, 2, 2],
+                   [3, 3, 3],
+                   [4, 4, 4]]])
+    """
+
+    # 各バッチのインデックスが重ならないように、バッチごとに異なる番号を足す
+    idx_base = torch.arange(0, batch_size, device=idx.device).view(-1, 1, 1) * num_vertices_reduced
+    """
+    idx_base = [batch_size, 1, 1])
+    idx_base = tensor([[[0]],
+
+                       [[5]]])
+    """
+    idx = idx + idx_base
+    """
+    idx.shape = [batch_size, num_points, k]
+    idx = tensor([[[0, 0, 0],
+                   [1, 1, 1],
+                   [2, 2, 2],
+                   [3, 3, 3],
+                   [4, 4, 4]],
+
+                  [[5, 5, 5],
+                   [6, 6, 6],
+                   [7, 7, 7],
+                   [8, 8, 8],
+                   [9, 9, 9]]])
+    """
+    idx = idx.contiguous().view(-1)
+    """
+    idx.shape = [batch_size * num_points * k]
+    idx = tensor([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 9, 9, 9])
+    """
+
+    x = x.transpose(2, 1)   # [B, C, n_points, 1] -> [B, n_points, C, 1]
+    feature = x.contiguous().view(batch_size * num_vertices_reduced, -1)[idx, :]    # [B, n_points, C, 1] -> [B * n_points, C] -> [B * n_points * k, C]
+    feature = feature.view(batch_size, num_vertices, k, num_dims).permute(0, 3, 1, 2).contiguous()  # [B * n_points * k, C] -> [B, num_points, k, C] -> [B, C, num_points, k]
 
     return feature
 
