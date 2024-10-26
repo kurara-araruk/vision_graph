@@ -29,7 +29,7 @@ class Stem(nn.Module):
     今回のシンプル実装は、ViTベースのパッチ分割を行う。なお、配列変換はViG風で実装する。
     もっとシンプルにするには、kernel_size, stride = patch_size にすればいい？
     """
-    def __init__(self, img_size=224, patch_size=16, out_dim=768):
+    def __init__(self, img_size=224, patch_size=16, out_dim=192):
         super().__init__()
 
         assert img_size % patch_size == 0, "Image size must be divisible by patch size."
@@ -83,7 +83,7 @@ class Knn(nn.Module):
             center_idx = torch.arange(0, n_points, device=x.device).repeat(batch_size, self.k, 1).transpose(2, 1)   # ->  [batch_size, n_points, k]
             edge_index = torch.stack((nn_idx, center_idx), dim=0)   # ->  [2, batch_size, n_points, k]
 
-        return edge_index
+        return edge_index, nn_idx
 
 
 ###############################################################################
@@ -208,7 +208,7 @@ class Grapher(nn.Module):
     def forward(self, x):
         _tmp = x
         x = self.fc1(x)
-        edge_idx = self.knn(x)
+        edge_idx, _ = self.knn(x)
         x = self.graph_conv(x, edge_idx)
         x = self.fc2(x)
         x = self.drop_path(x) + _tmp
@@ -259,13 +259,19 @@ class ViG(nn.Module):
                  n_classes,
                  img_size: int = 224,
                  patch_size: int = 16,
-                 stem_out_dim: int = 768,
+                 stem_out_dim: int = 192,
                  k: int = 9,
                  drop_path: float = 0.0,
                  n_blocks: int = 12,
                  ):
         super().__init__()
 
+        self.n_classes = n_classes
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.stem_out_dim = stem_out_dim
+        self.k = k
+        self.drop_path = drop_path
         self.n_blocks = n_blocks
 
         self.stem = Stem(img_size=img_size, patch_size=patch_size, out_dim=stem_out_dim)
@@ -283,12 +289,33 @@ class ViG(nn.Module):
                                         nn.Dropout(drop_path),
                                         nn.Conv2d(1024, n_classes, 1, bias=True))
 
-    def forward(self, x):
+    def __repr__(self):
+        return (f"ViG(n_classes={self.n_classes}, img_size={self.img_size}, patch_size={self.patch_size}, stem_out_dim={self.stem_out_dim}, k={self.k}, drop_path={self.drop_path}, n_blocks={self.n_blocks})")
+
+    def forward(self, x, return_edge_index=False):
+        edge_indices = []
+
         x = self.stem(x)
 
         for i in range(self.n_blocks):
-            x = self.vig_blocks[i](x)
+            if return_edge_index:
+                # Grapherブロックでedge_indexを取得
+                grapher, ffn = self.vig_blocks[i]
+                x = grapher.fc1(x)
+                edge_idx, nn_idx = grapher.knn(x)
+                edge_indices.append(nn_idx)  # edge_indexをリストに追加
+                x = grapher.graph_conv(x, edge_idx)
+                x = grapher.fc2(x)
+                x = grapher.drop_path(x) + x
+                x = ffn(x)
+
+            else:
+                x = self.vig_blocks[i](x)
 
         x = F.adaptive_avg_pool2d(x, 1)
+        predictions = self.prediction(x).squeeze(-1).squeeze(-1)
 
-        return self.prediction(x).squeeze(-1).squeeze(-1)
+        if return_edge_index:
+            return edge_indices
+        else:
+            return predictions
