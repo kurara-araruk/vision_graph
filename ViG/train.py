@@ -1,5 +1,5 @@
 """
-timestamp=$(date +%Y%m%d_%H%M%S) && mkdir -p vision_graph/ViG/log/$timestamp && nohup python vision_graph/ViG/train.py --logdir=vision_graph/ViG/log/$timestamp > vision_graph/ViG/log/$timestamp/tqdm.log 2>&1 &
+timestamp=$(date +%Y%m%d_%H%M%S) && mkdir -p scr/vision_graph/ViG/log/$timestamp && nohup python scr/vision_graph/ViG/train.py --logdir=scr/vision_graph/ViG/log/$timestamp > scr/vision_graph/ViG/log/$timestamp/tqdm.log 2>&1 &
 """
 ########################################################################################################################
 
@@ -14,6 +14,7 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchvision.datasets import ImageFolder
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -206,18 +207,9 @@ transform = transforms.Compose([
 ])
 
 # データの読み込み
-data_path = "/scr/data/CIFAR10"
-# データがすでに存在するかを確認
-if not os.path.exists(data_path):
-    download = True
-else:
-    download = False
-train_set = datasets.CIFAR10(
-    root = data_path,  train = True,
-    download = download, transform = transform)
-val_set = datasets.CIFAR10(
-    root = data_path,  train = False,
-    download = download, transform = transform)
+data_path = "/container/data/imagenet"
+train_set = ImageFolder(f"{data_path}/train", transform = transform)
+val_set = ImageFolder(f"{data_path}/val", transform = transform)
 
 batch_size = 100
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
@@ -228,18 +220,18 @@ if args.logdir is not None:
     log_dir = args.logdir
 else:
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_dir = f"/scr/vision_graph/ViG/log/{timestamp}"
+    log_dir = f"/container/scr/vision_graph/ViG/log/{timestamp}"
 
 # 学習
 torch_seed()
-net = ViG(10).to(device)
+net = ViG(1000, n_blocks=7).to(device)
 criterion = nn.CrossEntropyLoss()
 lr=0.001
 optimizer = optim.Adam(net.parameters(), lr=lr)
 scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=50, eta_min=0.0001)
 # scheduler = None
 history = np.zeros((0, 5))
-num_epochs = 100
+num_epochs = 30
 history = fit(net, optimizer, criterion, num_epochs, train_loader, val_loader, device, history, batch_size, scheduler, log_dir)
 evaluate_history(history, log_dir)
 

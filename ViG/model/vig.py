@@ -83,7 +83,7 @@ class Knn(nn.Module):
             center_idx = torch.arange(0, n_points, device=x.device).repeat(batch_size, self.k, 1).transpose(2, 1)   # ->  [batch_size, n_points, k]
             edge_index = torch.stack((nn_idx, center_idx), dim=0)   # ->  [2, batch_size, n_points, k]
 
-        return edge_index, nn_idx
+        return edge_index, nn_idx.to("cpu")
 
 
 ###############################################################################
